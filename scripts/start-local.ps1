@@ -46,8 +46,8 @@ Write-Host ""
 
 Write-Host "=== Quick test commands ===" -ForegroundColor Green
 Write-Host ('$TOKEN = "' + $TOKEN + '"')
-Write-Host 'curl http://localhost:8080/healthz'
-Write-Host 'curl -X POST http://localhost:8080/users -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"Alice\",\"email\":\"alice@example.com\"}"'
+Write-Host 'curl.exe http://localhost:8080/healthz'
+Write-Host 'curl.exe -X POST http://localhost:8080/users -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"Alice\",\"email\":\"alice@example.com\"}"'
 Write-Host ""
 Write-Host "Press Ctrl+C to stop tailing logs. Services keep running as background jobs." -ForegroundColor DarkGray
 Write-Host "Run:  .\scripts\start-local.ps1 -Stop   to kill all services.`n" -ForegroundColor DarkGray

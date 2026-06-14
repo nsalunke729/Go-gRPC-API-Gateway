@@ -166,16 +166,31 @@ curl http://localhost:8080/users/usr_...
 2. Generate a matching token locally:
    ```powershell
    $env:JWT_SECRET = "the-secret-you-set-in-vercel"
-   go run ./cmd/gentoken
+   $TOKEN = go run ./cmd/gentoken
    ```
-3. Use the printed token against your deployment URL:
+3. Use the printed token against your deployment URL.
+
+   > **Windows PowerShell:** use `curl.exe` (real curl binary) not `curl` (which aliases `Invoke-WebRequest` and uses different flags). Omit the trailing slash from `$BASE`.
+
+   ```powershell
+   # PowerShell
+   $BASE = "https://<your-vercel-url>.vercel.app"   # no trailing slash
+
+   curl.exe "$BASE/healthz"
+
+   curl.exe -X POST "$BASE/users" `
+     -H "Authorization: Bearer $TOKEN" `
+     -H "Content-Type: application/json" `
+     -d '{\"name\":\"Alice\",\"email\":\"alice@example.com\"}'
+   ```
+
    ```bash
+   # bash / macOS / Linux / WSL
    BASE="https://<your-vercel-url>.vercel.app"
-   TOKEN="<token from step 2>"
 
-   curl $BASE/healthz
+   curl "$BASE/healthz"
 
-   curl -X POST $BASE/users \
+   curl -X POST "$BASE/users" \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"name":"Alice","email":"alice@example.com"}'
