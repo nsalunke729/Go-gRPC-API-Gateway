@@ -10,16 +10,20 @@ A lightweight API gateway written in Go that exposes a REST API to external clie
 Client (REST/JSON)
        │
        ▼
-┌─────────────────────────────────┐
-│           API Gateway           │  :8080
-│  ┌──────────┐  ┌─────────────┐  │
-│  │ JWT Auth │  │ Rate Limiter│  │  middleware
-│  └──────────┘  └─────────────┘  │
-│  ┌──────────┐  ┌─────────────┐  │
-│  │  /users  │  │  /orders    │  │  handlers
-│  └────┬─────┘  └──────┬──────┘  │
-└───────┼────────────────┼─────────┘
-        │   gRPC (JSON)  │
+┌──────────────────────────────────────────┐
+│            API Gateway  :8080            │
+│  ┌──────────┐  ┌──────────────────────┐  │
+│  │ JWT Auth │  │ Rate Limiter         │  │  middleware
+│  └──────────┘  └──────────────────────┘  │
+│  ┌──────────────────────────────────────┐ │
+│  │ Prometheus metrics   GET /metrics   │ │  observability
+│  └──────────────────────────────────────┘ │
+│  ┌──────────┐  ┌─────────────┐            │
+│  │  /users  │  │  /orders   │            │  handlers
+│  └────┬─────┘  └──────┬──────┘            │
+└───────┼────────────────┼──────────────────┘
+        │ Circuit Breaker│ Circuit Breaker
+        │ (open→5 errors)│ (open→5 errors)
    ┌────▼────┐      ┌────▼─────┐
    │user-svc │      │order-svc │
    │  :9001  │      │  :9002   │
@@ -33,6 +37,8 @@ Client (REST/JSON)
 - **REST → gRPC translation** — gateway accepts JSON over HTTP and fans out to typed gRPC calls
 - **JWT authentication** — HS256 Bearer token validation on all non-health endpoints
 - **Per-client rate limiting** — token-bucket limiter (100 req/s, burst 200) keyed by `RemoteAddr`
+- **Circuit breaker** — three-state breaker (closed → open → half-open) on each gRPC client; trips after 5 consecutive infra failures, probes after 10 s; application errors (`NotFound`, `InvalidArgument`, etc.) never trip it
+- **Prometheus metrics** — `GET /metrics` exposes `gateway_http_requests_total` and `gateway_http_request_duration_seconds` labelled by method, route pattern, and status code
 - **Structured logging** — every request logged with method, path, status, and latency via [zap](https://github.com/uber-go/zap)
 - **Graceful shutdown** — SIGINT/SIGTERM drains in-flight requests before exit
 - **Health check** — `GET /healthz` with no auth required
@@ -49,6 +55,8 @@ Client (REST/JSON)
 | gRPC | [google.golang.org/grpc](https://pkg.go.dev/google.golang.org/grpc) |
 | JWT | [golang-jwt/jwt v5](https://github.com/golang-jwt/jwt) |
 | Rate limiting | [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time/rate) |
+| Metrics | [prometheus/client_golang v1.23](https://github.com/prometheus/client_golang) |
+| Circuit breaker | `internal/circuitbreaker` (hand-rolled, no external dep) |
 | Logging | [uber-go/zap](https://github.com/uber-go/zap) |
 | Serverless | [Vercel Go runtime](https://vercel.com/docs/functions/runtimes/go) |
 
@@ -71,17 +79,18 @@ server/
                 (lets api/index.go avoid Go's internal-package restriction)
 
 internal/
-  codec/        JSON-over-gRPC codec (replaces default proto codec)
-  embed/        In-process adapters: UserAdapter, OrderAdapter
+  circuitbreaker/  Three-state breaker + UserServiceClient / OrderServiceClient wrappers
+  codec/           JSON-over-gRPC codec (replaces default proto codec)
+  embed/           In-process adapters: UserAdapter, OrderAdapter
   pb/
-    user/       Request/response types for UserService
-    order/      Request/response types for OrderService
-  usersvc/      gRPC server impl, service descriptor, client
-  ordersvc/     gRPC server impl, service descriptor, client
+    user/          Request/response types for UserService
+    order/         Request/response types for OrderService
+  usersvc/         gRPC server impl, service descriptor, client
+  ordersvc/        gRPC server impl, service descriptor, client
   gateway/
-    middleware/ JWT auth + rate limiter
-    handlers/   REST handlers (translate to gRPC calls)
-    server.go   chi router wiring
+    middleware/    JWT auth + rate limiter + Prometheus metrics middleware
+    handlers/      REST handlers (translate to gRPC calls)
+    server.go      chi router wiring
 
 proto/          .proto files (contract documentation)
 scripts/
@@ -126,16 +135,17 @@ go run ./cmd/gentoken
 
 ## API reference
 
-All endpoints except `/healthz` require `Authorization: Bearer <token>`.
+All endpoints except `/healthz` and `/metrics` require `Authorization: Bearer <token>`.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/healthz` | Health check (no auth) |
-| `POST` | `/users` | Create a user |
-| `GET` | `/users/{id}` | Get a user by ID |
-| `POST` | `/orders` | Create an order |
-| `GET` | `/orders/{id}` | Get an order by ID |
-| `GET` | `/users/{userID}/orders` | List all orders for a user |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/healthz` | No | Health check |
+| `GET` | `/metrics` | No | Prometheus scrape endpoint |
+| `POST` | `/users` | Yes | Create a user |
+| `GET` | `/users/{id}` | Yes | Get a user by ID |
+| `POST` | `/orders` | Yes | Create an order |
+| `GET` | `/orders/{id}` | Yes | Get an order by ID |
+| `GET` | `/users/{userID}/orders` | Yes | List all orders for a user |
 
 ### Quick test (local)
 
