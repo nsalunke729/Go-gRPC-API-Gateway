@@ -4,12 +4,14 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/nsalunke729/go-grpc-gateway/internal/gateway/handlers"
 	"github.com/nsalunke729/go-grpc-gateway/internal/gateway/middleware"
+	"github.com/nsalunke729/go-grpc-gateway/internal/gateway/ui"
 	"github.com/nsalunke729/go-grpc-gateway/internal/ordersvc"
 	"github.com/nsalunke729/go-grpc-gateway/internal/usersvc"
 )
@@ -68,10 +71,29 @@ func NewWithClients(cfg Config, userClient usersvc.UserServiceClient, orderClien
 	r.Use(zapRequestLogger(log))
 	r.Use(rl.Middleware)
 
+	// Landing page / API playground
+	r.Get("/", ui.Handler())
+
 	// Health check — no auth required
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`)) //nolint:errcheck
+	})
+
+	// Demo token — issues a short-lived JWT for the playground; no auth required
+	r.Get("/demo/token", func(w http.ResponseWriter, r *http.Request) {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"sub": "demo-user",
+			"iat": time.Now().Unix(),
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		signed, err := token.SignedString([]byte(cfg.JWTSecret))
+		if err != nil {
+			http.Error(w, "token error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"token": signed}) //nolint:errcheck
 	})
 
 	// Authenticated routes
