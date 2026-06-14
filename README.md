@@ -2,8 +2,7 @@
 
 A lightweight API gateway written in Go that exposes a REST API to external clients and translates requests into gRPC calls to backend microservices.
 
-**Live demo:** [https://go-grpc-api-gateway.vercel.app](https://go-grpc-api-gateway.vercel.app/healthz)  
-_(replace with your Vercel URL — see [Vercel deployment](#vercel-deployment) section)_
+**Live demo:** [https://go-g-rpc-api-gateway.vercel.app](https://go-g-rpc-api-gateway.vercel.app/healthz)  
 
 ## Architecture
 
