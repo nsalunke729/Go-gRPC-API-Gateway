@@ -34,6 +34,8 @@ func grpcToHTTP(c codes.Code) int {
 		return http.StatusUnauthorized
 	case codes.ResourceExhausted:
 		return http.StatusTooManyRequests
+	case codes.Unavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}
