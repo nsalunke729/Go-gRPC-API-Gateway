@@ -52,9 +52,13 @@ func New(cfg Config, log *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("dial order-svc at %s: %w", cfg.OrderSvcAddr, err)
 	}
 
-	userClient := usersvc.NewClient(userConn)
-	orderClient := ordersvc.NewClient(orderConn)
+	return NewWithClients(cfg, usersvc.NewClient(userConn), ordersvc.NewClient(orderConn), log), nil
+}
 
+// NewWithClients builds a gateway using pre-wired service clients.
+// Used in serverless deployments (e.g. Vercel) where a separate gRPC dial
+// is not viable — callers pass in-process adapters instead.
+func NewWithClients(cfg Config, userClient usersvc.UserServiceClient, orderClient ordersvc.OrderServiceClient, log *zap.Logger) *Server {
 	rl := middleware.NewRateLimiter(rate.Limit(cfg.RateLimit), cfg.RateBurst, log)
 	authMW := middleware.Auth(cfg.JWTSecret, log)
 
@@ -93,8 +97,11 @@ func New(cfg Config, log *zap.Logger) (*Server, error) {
 			IdleTimeout:  120 * time.Second,
 		},
 		log: log,
-	}, nil
+	}
 }
+
+// HTTPHandler returns the underlying http.Handler, used by the Vercel serverless adapter.
+func (s *Server) HTTPHandler() http.Handler { return s.httpSrv.Handler }
 
 // Start begins serving HTTP traffic. It blocks until the server stops.
 func (s *Server) Start() error {
