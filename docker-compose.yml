@@ -1,0 +1,41 @@
+services:
+  user-svc:
+    build:
+      context: .
+      args:
+        CMD: user-svc
+    environment:
+      USER_SVC_ADDR: ":9001"
+    ports:
+      - "9001:9001"
+    restart: unless-stopped
+
+  order-svc:
+    build:
+      context: .
+      args:
+        CMD: order-svc
+    environment:
+      ORDER_SVC_ADDR: ":9002"
+    ports:
+      - "9002:9002"
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      args:
+        CMD: gateway
+    environment:
+      GATEWAY_ADDR: ":8080"
+      JWT_SECRET: "dev-secret-change-me"
+      USER_SVC_ADDR: "user-svc:9001"
+      ORDER_SVC_ADDR: "order-svc:9002"
+      RATE_LIMIT: "100"
+      RATE_BURST: "200"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - user-svc
+      - order-svc
+    restart: unless-stopped
