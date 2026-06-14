@@ -12,11 +12,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/nsalunke729/go-grpc-gateway/internal/circuitbreaker"
 	"github.com/nsalunke729/go-grpc-gateway/internal/gateway/handlers"
 	"github.com/nsalunke729/go-grpc-gateway/internal/gateway/middleware"
 	"github.com/nsalunke729/go-grpc-gateway/internal/gateway/ui"
@@ -61,7 +63,14 @@ func New(cfg Config, log *zap.Logger) (*Server, error) {
 // NewWithClients builds a gateway using pre-wired service clients.
 // Used in serverless deployments (e.g. Vercel) where a separate gRPC dial
 // is not viable — callers pass in-process adapters instead.
+// Circuit breakers are wired here regardless of whether clients are local adapters
+// or real gRPC connections.
 func NewWithClients(cfg Config, userClient usersvc.UserServiceClient, orderClient ordersvc.OrderServiceClient, log *zap.Logger) *Server {
+	userClient = circuitbreaker.WrapUserClient(userClient,
+		circuitbreaker.New("user-svc", 5, 10*time.Second))
+	orderClient = circuitbreaker.WrapOrderClient(orderClient,
+		circuitbreaker.New("order-svc", 5, 10*time.Second))
+
 	rl := middleware.NewRateLimiter(rate.Limit(cfg.RateLimit), cfg.RateBurst, log)
 	authMW := middleware.Auth(cfg.JWTSecret, log)
 
@@ -70,6 +79,7 @@ func NewWithClients(cfg Config, userClient usersvc.UserServiceClient, orderClien
 	r.Use(chimw.RealIP)
 	r.Use(zapRequestLogger(log))
 	r.Use(rl.Middleware)
+	r.Use(middleware.Metrics)
 
 	// Landing page / API playground
 	r.Get("/", ui.Handler())
@@ -79,6 +89,10 @@ func NewWithClients(cfg Config, userClient usersvc.UserServiceClient, orderClien
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"ok"}`)) //nolint:errcheck
 	})
+
+	// Prometheus metrics scrape endpoint — no auth required.
+	// In production, restrict access to your metrics collector via network policy.
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Demo token — issues a short-lived JWT for the playground; no auth required
 	r.Get("/demo/token", func(w http.ResponseWriter, r *http.Request) {
